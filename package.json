@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
-	"version": "0.12.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"name": "obsidian-prettier-obsidian",
+	"version": "0.0.1",
+	"description": "format markdown using prettier",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
@@ -19,5 +19,10 @@
 		"obsidian": "^0.12.17",
 		"tslib": "2.3.1",
 		"typescript": "4.4.4"
+	},
+	"dependencies": {
+		"@babel/parser": "^7.16.7",
+		"@types/prettier": "^2.4.2",
+		"prettier": "^2.5.1"
 	}
 }

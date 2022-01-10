@@ -1,137 +1,153 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, MarkdownView, Plugin, PluginSettingTab, Setting } from "obsidian";
+import prettier from "prettier";
+import parserBabel from "prettier/parser-babel";
+import parserMarkdown from "prettier/parser-markdown";
+import parserTypescript from "prettier/parser-typescript";
 
 // Remember to rename these classes and interfaces!
 
-interface MyPluginSettings {
-	mySetting: string;
+interface Settings {
+	formatOnSave?: boolean;
+	prettierConfig: Record<string, string | number | boolean>;
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+const DEFAULT_SETTINGS: Settings = {
+	formatOnSave: false,
+	prettierConfig: {
+		arrowParens: "always",
+		bracketSameLine: false,
+		bracketSpacing: true,
+		embeddedLanguageFormatting: "auto",
+		insertPragma: false,
+		jsxSingleQuote: false,
+		printWidth: 80,
+		proseWrap: "always",
+		quoteProps: "as-needed",
+		semi: true,
+		singleQuote: false,
+		tabWidth: 2,
+	},
+};
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class PrettierFormatPlugin extends Plugin {
+	settings: Settings;
 
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
 		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
+		statusBarItemEl.setText(
+			`Formating: ${this.settings.formatOnSave ? "true" : "false"}`
+		);
 
 		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
+			id: "format toggle file with perttier",
+			name: "format file",
+			editorCallback: (editor) => {
+				this.format();
+			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		if (this.settings.formatOnSave) {
+			this.registerAutoSaveCommand();
+		}
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		this.addSettingTab(new FormatSettingTab(this.app, this));
 	}
 
-	onunload() {
+	onunload() {}
 
+	registerAutoSaveCommand() {
+		if (window.hadRegister) {
+			return;
+		}
+		// console.log(Object.keys(this.app.commands.commands));
+		// @ts-ignore
+		const saveFileCommand = this.app.commands.commands["editor:save-file"];
+
+		const originalCallback = saveFileCommand.callback;
+		// saveFileCommand.callback = callback;
+		saveFileCommand.callback = (...args: any) => {
+			this.format();
+			originalCallback && originalCallback(...args);
+		};
+
+		window.hadRegister = true;
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	async format() {
+		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+
+		const editor = activeView.editor;
+
+		const text = editor.getValue();
+		const { top, left } = editor.getScrollInfo();
+		const cursor = editor.getCursor();
+
+		// console.log({ top, left });
+
+		const formated = prettier.format(text, {
+			parser: "markdown",
+			...this.settings.prettierConfig,
+			plugins: [parserBabel, parserMarkdown, parserTypescript],
+		});
+
+		if (text === formated) {
+			return;
+		}
+
+		editor.setValue(formated);
+		editor.setCursor(cursor);
+		editor.scrollTo(left, top);
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
+	async loadSettings(setting: Partial<Settings> = {}) {
+		this.settings = Object.assign(
+			setting,
+			DEFAULT_SETTINGS,
+			await this.loadData()
+		);
+	}
+
+	async saveSettings(settings: Partial<Settings> = {}) {
+		await this.saveData({ ...this.settings, ...settings });
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+class FormatSettingTab extends PluginSettingTab {
+	plugin: PrettierFormatPlugin;
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: PrettierFormatPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
 	display(): void {
-		const {containerEl} = this;
+		const { containerEl } = this;
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
+		containerEl.createEl("h2", { text: "Settings for Prettier-Obsidian" });
 
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					console.log('Secret: ' + value);
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+			.setName("Format On Save")
+			.addToggle((toggle) => {
+				toggle.onChange(async (val) => {
+					await this.plugin.saveSettings({ formatOnSave: val });
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("Prettier Config")
+			.addTextArea((textarea) => {
+				textarea.onChange(async (val) => {
+					try {
+						let config = JSON.parse(val);
+						await this.plugin.saveSettings(config);
+					} catch (e) {}
+				});
+			});
 	}
 }
